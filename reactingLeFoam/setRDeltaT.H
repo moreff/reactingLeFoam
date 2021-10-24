@@ -8,7 +8,7 @@
 License
     This file is derived from OpenFOAM, developed by Aalto University, Finland.
 
-    Bulut Tekgül, Heikki Kahila, 2020.
+    Bulut Tekgül, Heikki Kahila, Ilya Morev, 2020-2021.
 
     OpenFOAM is free software: you can redistribute it and/or modify it
     under the terms of the GNU General Public License as published by

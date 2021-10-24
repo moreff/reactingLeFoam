@@ -1,5 +1,5 @@
 # reactingLeFoam
-![OpenFOAM 8](https://img.shields.io/badge/OpenFOAM-8-brightgreen.svg)
+![OpenFOAM 9](https://img.shields.io/badge/OpenFOAM-9-brightgreen.svg)
 
 An OpenFOAM reacting solver which takes the Lewis number of given species as user input. Developed by Bulut Tekgül & Heikki Kahila, Aalto University, Finland.
 
@@ -21,6 +21,3 @@ where unity Lewis number assumption gives us the formulation exists within OpenF
 * This solver introduces this formulation back into species mass fraction and enthalpy equations. The Lewis number of a given specie is defined by the user. Undefined species automatically gets unity Lewis number.
 
 * Note that current OpenFOAM-dev branch (as of October 2020) includes a file structure which supports a multi-component mixture model, so this solver may be completely obsolete by the next stable release of OpenFOAM.
-
-
-

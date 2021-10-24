@@ -9,39 +9,39 @@ tmp<fv::convectionScheme<scalar>> mvConvection
     )
 );
 
+reaction->correct();
+volScalarField Yt(0.0*Y[0]);
+
+forAll(Y, i)
 {
-    reaction->correct();
-    volScalarField Yt(0.0*Y[0]);
-
-    forAll(Y, i)
+    if (i != inertIndex && composition.active(i))
     {
-        if (i != inertIndex && composition.active(i))
-        {
-            volScalarField& Yi = Y[i];
+        volScalarField& Yi = Y[i];
 
-            fvScalarMatrix YiEqn
-            (
-                fvm::ddt(rho, Yi)
-              + mvConvection->fvmDiv(phi, Yi)
-              - fvm::laplacian(thermophysicalTransport->alphaEff()/LewisNumber[i], Yi)
-             ==
-                reaction->R(Yi)
-              + fvOptions(rho, Yi)
-            );
+        fvScalarMatrix YiEqn
+        (
+    	fvm::ddt(rho, Yi)
+          + mvConvection->fvmDiv(phi, Yi)
+          - fvm::laplacian(thermophysicalTransport->alphaEff()/LewisNumber[i], Yi)
+         ==
+    	reaction->R(Yi)
+          + fvModels.source(rho, Yi)
+        );
 
-            YiEqn.relax();
+        YiEqn.relax();
 
-            fvOptions.constrain(YiEqn);
+        fvConstraints.constrain(YiEqn);
 
-            YiEqn.solve("Yi");
+        YiEqn.solve("Yi");
 
-            fvOptions.correct(Yi);
+        fvConstraints.constrain(Yi);
 
-            Yi.max(0.0);
-            Yt += Yi;
-        }
+        Yi.max(0.0);
+        Yt += Yi;
     }
-
-    Y[inertIndex] = scalar(1) - Yt;
-    Y[inertIndex].max(0.0);
 }
+
+Y[inertIndex] = scalar(1) - Yt;
+Y[inertIndex].max(0.0);
+
+// composition.normalise();

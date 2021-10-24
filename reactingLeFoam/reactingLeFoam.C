@@ -8,7 +8,7 @@
 License
     This file is derived from OpenFOAM, developed by Aalto University, Finland.
 
-    Bulut Tekgül, Heikki Kahila, 2020.
+    Bulut Tekgül, Heikki Kahila, Ilya Morev, 2020-2021.
 
     OpenFOAM is free software: you can redistribute it and/or modify it
     under the terms of the GNU General Public License as published by
@@ -27,20 +27,28 @@ Application
     reactingLeFoam
 
 Description
-    Solver for combustion with chemical reactions that reads the Lewis 
-    number of species from a user-given dict.
+    Transient solver for turbulent flow of compressible reacting fluids with
+    optional mesh motion and mesh topology changes.
+
+    Uses the flexible PIMPLE (PISO-SIMPLE) solution for time-resolved and
+    pseudo-transient simulations.
+
+    Reads the Lewis number of species from a user-given dict.
 
 \*---------------------------------------------------------------------------*/
 
 #include "fvCFD.H"
-#include "fluidThermoMomentumTransportModel.H"
-#include "psiReactionThermophysicalTransportModel.H"
-#include "psiReactionThermo.H"
-#include "CombustionModel.H"
+#include "dynamicFvMesh.H"
+#include "fluidReactionThermo.H"
+#include "combustionModel.H"
+#include "dynamicMomentumTransportModel.H"
+#include "fluidReactionThermophysicalTransportModel.H"
 #include "multivariateScheme.H"
 #include "pimpleControl.H"
-#include "pressureControl.H"
-#include "fvOptions.H"
+#include "pressureReference.H"
+#include "CorrectPhi.H"
+#include "fvModels.H"
+#include "fvConstraints.H"
 #include "localEulerDdtScheme.H"
 #include "fvcSmooth.H"
 
@@ -52,12 +60,12 @@ int main(int argc, char *argv[])
 
     #include "setRootCaseLists.H"
     #include "createTime.H"
-    #include "createMesh.H"
-    #include "createControl.H"
-    #include "createTimeControls.H"
+    #include "createDynamicFvMesh.H"
+    #include "createDyMControls.H"
     #include "initContinuityErrs.H"
     #include "createFields.H"
     #include "createFieldRefs.H"
+    #include "createRhoUfIfPresent.H"
 
     turbulence->validate();
 
@@ -73,7 +81,20 @@ int main(int argc, char *argv[])
 
     while (pimple.run(runTime))
     {
-        #include "readTimeControls.H"
+        #include "readDyMControls.H"
+
+        // Store divrhoU from the previous mesh so that it can be mapped
+        // and used in correctPhi to ensure the corrected phi has the
+        // same divergence
+        autoPtr<volScalarField> divrhoU;
+        if (correctPhi)
+        {
+            divrhoU = new volScalarField
+            (
+                "divrhoU",
+                fvc::div(fvc::absolute(phi, rho, U))
+            );
+        }
 
         if (LTS)
         {
@@ -89,24 +110,84 @@ int main(int argc, char *argv[])
 
         Info<< "Time = " << runTime.timeName() << nl << endl;
 
-        #include "rhoEqn.H"
-
+        // --- Pressure-velocity PIMPLE corrector loop
         while (pimple.loop())
         {
-            #include "UEqn.H"
-            #include "YEqn.H"
-            #include "EEqn.H"
-
-            // --- Pressure corrector loop
-            while (pimple.correct())
+            if (!pimple.flow())
             {
-                #include "pEqn.H"
+                if (pimple.models())
+                {
+                    fvModels.correct();
+                }
+
+                if (pimple.thermophysics())
+                {
+                    #include "YEqn.H"
+                    #include "EEqn.H"
+                }
             }
-
-            if (pimple.turbCorr())
+            else
             {
-                turbulence->correct();
-                thermophysicalTransport->correct();
+                if (pimple.firstPimpleIter() || moveMeshOuterCorrectors)
+                {
+                    // Store momentum to set rhoUf for introduced faces.
+                    autoPtr<volVectorField> rhoU;
+                    if (rhoUf.valid())
+                    {
+                        rhoU = new volVectorField("rhoU", rho*U);
+                    }
+
+                    fvModels.preUpdateMesh();
+
+                    // Do any mesh changes
+                    mesh.update();
+
+                    if (mesh.changing())
+                    {
+                        MRF.update();
+
+                        if (correctPhi)
+                        {
+                            #include "correctPhi.H"
+                        }
+
+                        if (checkMeshCourantNo)
+                        {
+                            #include "meshCourantNo.H"
+                        }
+                    }
+                }
+
+                if (pimple.firstPimpleIter() && !pimple.simpleRho())
+                {
+                    #include "rhoEqn.H"
+                }
+
+                if (pimple.models())
+                {
+                    fvModels.correct();
+                }
+
+                #include "UEqn.H"
+
+                if (pimple.thermophysics())
+                {
+                    #include "YEqn.H"
+                    #include "EEqn.H"
+                }
+
+                // --- Pressure corrector loop
+                while (pimple.correct())
+                {
+                    // #include "../../compressible/rhoPimpleFoam/pEqn.H"
+                    #include "pEqn.H"
+                }
+
+                if (pimple.turbCorr())
+                {
+                    turbulence->correct();
+                    thermophysicalTransport->correct();
+                }
             }
         }
 
