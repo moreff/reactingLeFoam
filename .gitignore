@@ -30,3 +30,16 @@
 *.exe
 *.out
 *.app
+
+0/uniform
+log.*
+[0-9].[0-9]*
+[1-9]*
+polyMesh
+uniform
+processor*
+postProcessing
+*.pyc
+__pycache__
+.ipynb*
+*.ipynb
