@@ -50,7 +50,7 @@ volScalarField& p = thermo.p();
 
 pressureReference pressureReference(p, pimple.dict(), false);
 
-mesh.setFluxRequired(p.name());
+mesh.schemes().setFluxRequired(p.name());
 
 
 Info << "Creating turbulence model.\n" << nl;
