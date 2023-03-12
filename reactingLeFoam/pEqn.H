@@ -1,7 +1,5 @@
-if ((!mesh.steady() && !pimple.simpleRho()) || pimple.consistent())
-{
-    rho = thermo.rho();
-}
+rho = thermo.rho();
+rho.relax();
 
 // Thermodynamic density needs to be updated by psi*d(p) after the
 // pressure solution
@@ -41,22 +39,25 @@ surfaceScalarField phiHbyA
   + MRF.zeroFilter(rhorAUf*fvc::ddtCorr(rho, U, phi, rhoUf))
 );
 
-fvc::makeRelative(phiHbyA, rho, U);
 MRF.makeRelative(fvc::interpolate(rho), phiHbyA);
-
-bool adjustMass = false;
 
 // Update the pressure BCs to ensure flux consistency
 constrainPressure(p, rho, U, phiHbyA, rhorAAtUf, MRF);
 
+fvc::makeRelative(phiHbyA, rho, U);
+
+bool adjustMass = false;
+
 if (pimple.transonic())
 {
-    surfaceScalarField phid
+    const surfaceScalarField phid
     (
         "phid",
         (fvc::interpolate(psi)/fvc::interpolate(rho))*phiHbyA
     );
 
+    // Subtract the compressible part
+    // The resulting flux will be zero for a perfect gas
     phiHbyA -= fvc::interpolate(psi*p)*phiHbyA/fvc::interpolate(rho);
 
     if (pimple.consistent())
@@ -96,7 +97,7 @@ if (pimple.transonic())
 }
 else
 {
-    if (mesh.steady())
+    if (mesh.schemes().steady())
     {
         adjustMass = adjustPhi(phiHbyA, U, p);
     }
@@ -134,7 +135,7 @@ else
     }
 }
 
-if (mesh.steady())
+if (mesh.schemes().steady())
 {
     #include "incompressible/continuityErrs.H"
 }
@@ -162,7 +163,7 @@ U.correctBoundaryConditions();
 fvConstraints.constrain(U);
 K = 0.5*magSqr(U);
 
-if (mesh.steady())
+if (mesh.schemes().steady())
 {
     fvConstraints.constrain(p);
 }
@@ -176,15 +177,15 @@ if (adjustMass && !thermo.incompressible())
     p.correctBoundaryConditions();
 }
 
-if (mesh.steady() || pimple.simpleRho() || adjustMass)
+if (mesh.schemes().steady() || pimple.simpleRho() || adjustMass)
 {
     rho = thermo.rho();
 }
 
 // Correct rhoUf if the mesh is moving
-fvc::correctRhoUf(rhoUf, rho, U, phi);
+fvc::correctRhoUf(rhoUf, rho, U, phi, MRF);
 
-if ((mesh.steady() || pimple.simpleRho()) && !pimple.transonic())
+if (mesh.schemes().steady() || pimple.simpleRho())
 {
     rho.relax();
 }
