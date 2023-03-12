@@ -1,7 +1,5 @@
-if (!mesh.steady() && !pimple.simpleRho())
-{
-    rho = thermo.rho();
-}
+rho = thermo.rho();
+rho.relax();
 
 // Thermodynamic density needs to be updated by psi*d(p) after the
 // pressure solution
@@ -25,9 +23,9 @@ surfaceScalarField phiHbyA
 
 MRF.makeRelative(fvc::interpolate(rho), phiHbyA);
 
-bool adjustMass = mesh.steady() && adjustPhi(phiHbyA, U, p_rgh);
+bool adjustMass = mesh.schemes().steady() && adjustPhi(phiHbyA, U, p_rgh);
 
-surfaceScalarField phig(-rhorAUf*ghf*fvc::snGrad(rho)*mesh.magSf());
+const surfaceScalarField phig(-rhorAUf*ghf*fvc::snGrad(rho)*mesh.magSf());
 
 phiHbyA += phig;
 
@@ -40,18 +38,19 @@ fvScalarMatrix p_rghEqn(p_rgh, dimMass/dimTime);
 
 if (pimple.transonic())
 {
-    surfaceScalarField phid
+    const surfaceScalarField phid
     (
         "phid",
         (fvc::interpolate(psi)/fvc::interpolate(rho))*phiHbyA
     );
 
-    phiHbyA -= fvc::interpolate(psi*p_rgh)*phiHbyA/fvc::interpolate(rho);
+    const fvScalarMatrix divPhidp(fvm::div(phid, p));
+    phiHbyA -= divPhidp.flux();
 
     fvScalarMatrix p_rghDDtEqn
     (
         fvc::ddt(rho) + psi*correction(fvm::ddt(p_rgh))
-      + fvc::div(phiHbyA) + fvm::div(phid, p_rgh)
+      + fvc::div(phiHbyA) + divPhidp
      ==
         fvModels.source(psi, p_rgh, rho.name())
     );
@@ -98,7 +97,7 @@ else
 
 phi = phiHbyA + p_rghEqn.flux();
 
-if (mesh.steady())
+if (mesh.schemes().steady())
 {
     #include "incompressible/continuityErrs.H"
 }
@@ -132,9 +131,13 @@ U.correctBoundaryConditions();
 fvConstraints.constrain(U);
 K = 0.5*magSqr(U);
 
-if (mesh.steady())
+if (mesh.schemes().steady())
 {
-    fvConstraints.constrain(p);
+    if (fvConstraints.constrain(p))
+    {
+        p_rgh = p - rho*gh - pRef;
+        p_rgh.correctBoundaryConditions();
+    }
 }
 
 // For steady closed-volume compressible cases adjust the pressure level
@@ -147,18 +150,18 @@ if (adjustMass && !thermo.incompressible())
     p_rgh.correctBoundaryConditions();
 }
 
-if (mesh.steady() || pimple.simpleRho() || adjustMass)
+if (mesh.schemes().steady() || pimple.simpleRho() || adjustMass)
 {
     rho = thermo.rho();
 }
 
-if ((mesh.steady() || pimple.simpleRho()) && !pimple.transonic())
+if (mesh.schemes().steady() || pimple.simpleRho())
 {
     rho.relax();
 }
 
 // Correct rhoUf if the mesh is moving
-fvc::correctRhoUf(rhoUf, rho, U, phi);
+fvc::correctRhoUf(rhoUf, rho, U, phi, MRF);
 
 if (thermo.dpdt())
 {
