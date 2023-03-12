@@ -30,52 +30,42 @@ License
 
     const dictionary& pimpleDict = pimple.dict();
 
-    // Maximum flow Courant number
-    scalar maxCo(pimpleDict.lookup<scalar>("maxCo"));
-
-    // Maximum time scale
-    scalar maxDeltaT(pimpleDict.lookupOrDefault<scalar>("maxDeltaT", great));
-
-    // Smoothing parameter (0-1) when smoothing iterations > 0
-    scalar rDeltaTSmoothingCoeff
-    (
-        pimpleDict.lookupOrDefault<scalar>("rDeltaTSmoothingCoeff", 0.1)
-    );
-
-    // Damping coefficient (1-0)
-    scalar rDeltaTDampingCoeff
-    (
-        pimpleDict.lookupOrDefault<scalar>("rDeltaTDampingCoeff", 1.0)
-    );
-
-    // Maximum change in cell temperature per iteration
-    // (relative to previous value)
-    scalar alphaTemp(pimpleDict.lookupOrDefault("alphaTemp", 0.05));
-
-    // Maximum change in cell concentration per iteration
-    // (relative to reference value)
-    scalar alphaY(pimpleDict.lookupOrDefault("alphaY", 1.0));
-
     Info<< "Time scales min/max:" << endl;
 
     // Cache old reciprocal time scale field
-    volScalarField rDeltaT0("rDeltaT0", rDeltaT);
+    const volScalarField rDeltaT0("rDeltaT0", rDeltaT);
 
     // Flow time scale
     {
+        // Maximum flow Courant number
+        const scalar maxCo(pimpleDict.lookup<scalar>("maxCo"));
+
         rDeltaT.ref() =
         (
             fvc::surfaceSum(mag(phi))()()
            /((2*maxCo)*mesh.V()*rho())
         );
 
-        // Limit the largest time scale
-        rDeltaT.max(1/maxDeltaT);
+        // Limit the largest time step
+        if (pimpleDict.found("maxDeltaT"))
+        {
+            rDeltaT.max(1/pimpleDict.lookup<scalar>("maxDeltaT"));
+        }
+
+        // Limit the smallest time step
+        if (pimpleDict.found("minDeltaT"))
+        {
+            rDeltaT.min(1/pimpleDict.lookup<scalar>("minDeltaT"));
+        }
 
         Info<< "    Flow        = "
             << 1/gMax(rDeltaT.primitiveField()) << ", "
             << 1/gMin(rDeltaT.primitiveField()) << endl;
     }
+
+    // Maximum change in cell temperature per iteration
+    // (relative to previous value)
+    const scalar alphaTemp(pimpleDict.lookupOrDefault("alphaTemp", 0.05));
 
     // Heat release rate time scale
     if (alphaTemp < 1)
@@ -93,9 +83,13 @@ License
     }
 
     // Reaction rate time scale
-    if (alphaY < 1)
+    if (pimpleDict.found("alphaY"))
     {
-        dictionary Yref(pimpleDict.subDict("Yref"));
+        // Maximum change in cell concentration per iteration
+        // (relative to reference value)
+        const scalar alphaY(pimpleDict.lookup<scalar>("alphaY"));
+
+        const dictionary Yref(pimpleDict.subDict("Yref"));
 
         volScalarField::Internal rDeltaTY
         (
@@ -113,7 +107,7 @@ License
 
         forAll(Y, i)
         {
-            if (i != inertIndex && composition.active(i))
+            if (composition.solve(i))
             {
                 volScalarField& Yi = Y[i];
 
@@ -154,6 +148,12 @@ License
     // Update the boundary values of the reciprocal time-step
     rDeltaT.correctBoundaryConditions();
 
+    // Smoothing parameter (0-1) when smoothing iterations > 0
+    const scalar rDeltaTSmoothingCoeff
+    (
+        pimpleDict.lookupOrDefault<scalar>("rDeltaTSmoothingCoeff", 0.1)
+    );
+
     // Spatially smooth the time scale field
     if (rDeltaTSmoothingCoeff < 1)
     {
@@ -165,10 +165,16 @@ License
     // - only increase at a fraction of old time scale
     if
     (
-        rDeltaTDampingCoeff < 1
+        pimpleDict.found("rDeltaTDampingCoeff")
      && runTime.timeIndex() > runTime.startTimeIndex() + 1
     )
     {
+        // Damping coefficient (1-0)
+        const scalar rDeltaTDampingCoeff
+        (
+            pimpleDict.lookup<scalar>("rDeltaTDampingCoeff")
+        );
+
         rDeltaT = max
         (
             rDeltaT,
